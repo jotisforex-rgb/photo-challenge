@@ -27,7 +27,7 @@ const PhotoChallenge = () => {
     { title: '✈️ Defying Gravity', desc: 'Saltando bien alto' },
     { title: '🎭 Todos Iguales', desc: 'Grupo con la MISMA pose' },
     { title: '🪞 Espejo del Alma', desc: 'Tu reflejo en algo' },
-    { title: '🏛️ Monumento Nuestro', desc: 'Vosotros en algo icónico' },
+    { title: '🏛️ Monumento Nuestro', desc: 'Vosotros en algo icónic' },
   ];
 
   const createRoom = async () => {
