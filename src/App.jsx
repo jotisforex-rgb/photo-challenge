@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { Camera, Users, Trophy } from 'lucide-react';
 
@@ -6,6 +6,8 @@ const SUPABASE_URL = 'https://ngvsqgjuinpwncpxzjth.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_d53jWPWx1rU20L9QBNMQRQ_ZGedNEbA';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+const STORAGE_KEY = 'photo_challenge_session';
 
 const PhotoChallenge = () => {
   const [gameState, setGameState] = useState('home');
@@ -30,25 +32,41 @@ const PhotoChallenge = () => {
     { title: '🏛️ Monumento Nuestro', desc: 'Vosotros en algo icónico' },
   ];
 
+  const saveSession = (room, user) => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        room,
+        user,
+      })
+    );
+  };
+
+  const clearSession = () => {
+    localStorage.removeItem(STORAGE_KEY);
+  };
+
   const loadRoomData = async (roomId) => {
     try {
       const { data: challengeData, error: challengeError } = await supabase
         .from('challenges')
-        .select()
-        .eq('room_id', roomId);
+        .select('*')
+        .eq('room_id', roomId)
+        .order('created_at', { ascending: true });
 
       if (challengeError) throw challengeError;
       setChallenges(challengeData || []);
 
       const { data: participantData, error: participantError } = await supabase
         .from('participants')
-        .select()
-        .eq('room_id', roomId);
+        .select('*')
+        .eq('room_id', roomId)
+        .order('joined_at', { ascending: true });
 
       if (participantError) throw participantError;
       setParticipants(participantData || []);
 
-      const challengeIds = (challengeData || []).map(c => c.id);
+      const challengeIds = (challengeData || []).map((c) => c.id);
 
       if (challengeIds.length === 0) {
         setSubmissions({});
@@ -57,13 +75,13 @@ const PhotoChallenge = () => {
 
       const { data: submissionData, error: submissionError } = await supabase
         .from('submissions')
-        .select()
+        .select('*')
         .in('challenge_id', challengeIds);
 
       if (submissionError) throw submissionError;
 
       const submissionsByChallenge = {};
-      (submissionData || []).forEach(sub => {
+      (submissionData || []).forEach((sub) => {
         if (!submissionsByChallenge[sub.challenge_id]) {
           submissionsByChallenge[sub.challenge_id] = [];
         }
@@ -77,14 +95,79 @@ const PhotoChallenge = () => {
     }
   };
 
+  const restoreSession = async () => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+
+      const parsed = JSON.parse(raw);
+      if (!parsed?.room?.id || !parsed?.user?.id) return;
+
+      const { data: roomData, error: roomError } = await supabase
+        .from('rooms')
+        .select('*')
+        .eq('id', parsed.room.id)
+        .single();
+
+      if (roomError || !roomData) {
+        clearSession();
+        return;
+      }
+
+      const { data: userData, error: userError } = await supabase
+        .from('participants')
+        .select('*')
+        .eq('id', parsed.user.id)
+        .eq('room_id', parsed.room.id)
+        .single();
+
+      if (userError || !userData) {
+        clearSession();
+        return;
+      }
+
+      setCurrentRoom(roomData);
+      setCurrentUser({
+        id: userData.id,
+        nick: userData.nickname,
+        color: userData.avatar_color,
+      });
+      setGameState('play');
+      await loadRoomData(roomData.id);
+    } catch (err) {
+      console.error(err);
+      clearSession();
+    }
+  };
+
+  useEffect(() => {
+    restoreSession();
+  }, []);
+
   useEffect(() => {
     if (gameState !== 'play' || !currentRoom?.id) return;
 
+    loadRoomData(currentRoom.id);
+
     const interval = setInterval(() => {
       loadRoomData(currentRoom.id);
-    }, 5000);
+    }, 3000);
 
-    return () => clearInterval(interval);
+    const handleFocus = () => loadRoomData(currentRoom.id);
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        loadRoomData(currentRoom.id);
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
   }, [gameState, currentRoom?.id]);
 
   const createRoom = async () => {
@@ -99,37 +182,41 @@ const PhotoChallenge = () => {
       const { data: roomData, error: roomError } = await supabase
         .from('rooms')
         .insert([{ code, name: cleanNick, created_by: cleanNick }])
-        .select();
+        .select()
+        .single();
 
       if (roomError) throw roomError;
 
-      const roomId = roomData[0].id;
       const userColor = colors[0];
 
       const { data: userData, error: userError } = await supabase
         .from('participants')
-        .insert([{ room_id: roomId, nickname: cleanNick, avatar_color: userColor }])
+        .insert([{ room_id: roomData.id, nickname: cleanNick, avatar_color: userColor }])
         .select()
         .single();
 
       if (userError) throw userError;
 
-      for (let i = 0; i < challengesList.length; i++) {
-        const { error: challengeError } = await supabase
-          .from('challenges')
-          .insert([{
-            room_id: roomId,
-            title: challengesList[i].title,
-            description: challengesList[i].desc,
-          }]);
+      const challengesToInsert = challengesList.map((challenge) => ({
+        room_id: roomData.id,
+        title: challenge.title,
+        description: challenge.desc,
+      }));
 
-        if (challengeError) throw challengeError;
-      }
+      const { error: challengesError } = await supabase
+        .from('challenges')
+        .insert(challengesToInsert);
 
-      setCurrentRoom({ id: roomId, code });
-      setCurrentUser({ id: userData.id, nick: cleanNick, color: userColor });
+      if (challengesError) throw challengesError;
+
+      const room = { id: roomData.id, code: roomData.code };
+      const user = { id: userData.id, nick: cleanNick, color: userColor };
+
+      setCurrentRoom(room);
+      setCurrentUser(user);
+      saveSession(room, user);
       setGameState('play');
-      await loadRoomData(roomId);
+      await loadRoomData(roomData.id);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -148,7 +235,7 @@ const PhotoChallenge = () => {
 
       const { data: roomData, error: roomError } = await supabase
         .from('rooms')
-        .select()
+        .select('*')
         .eq('code', cleanCode)
         .single();
 
@@ -156,13 +243,14 @@ const PhotoChallenge = () => {
 
       const { data: existingParticipants, error: existingError } = await supabase
         .from('participants')
-        .select()
+        .select('*')
         .eq('room_id', roomData.id)
-        .ilike('nickname', cleanNick);
+        .ilike('nickname', cleanNick)
+        .limit(1);
 
       if (existingError) throw existingError;
 
-      let finalUser;
+      let finalUser = null;
 
       if (existingParticipants && existingParticipants.length > 0) {
         finalUser = existingParticipants[0];
@@ -175,20 +263,39 @@ const PhotoChallenge = () => {
           .select()
           .single();
 
-        if (userError) throw userError;
-        finalUser = newUser;
+        if (userError) {
+          if (userError.code === '23505') {
+            const { data: retryUser, error: retryError } = await supabase
+              .from('participants')
+              .select('*')
+              .eq('room_id', roomData.id)
+              .ilike('nickname', cleanNick)
+              .limit(1);
+
+            if (retryError || !retryUser?.length) throw userError;
+            finalUser = retryUser[0];
+          } else {
+            throw userError;
+          }
+        } else {
+          finalUser = newUser;
+        }
       }
 
-      setCurrentRoom(roomData);
-      setCurrentUser({
+      const room = { id: roomData.id, code: roomData.code };
+      const user = {
         id: finalUser.id,
         nick: finalUser.nickname,
         color: finalUser.avatar_color,
-      });
+      };
+
+      setCurrentRoom(room);
+      setCurrentUser(user);
+      saveSession(room, user);
       setGameState('play');
       await loadRoomData(roomData.id);
     } catch (err) {
-      setError(err.message);
+      setError(err.message || 'Error al entrar en la sala');
     } finally {
       setLoading(false);
     }
@@ -198,7 +305,6 @@ const PhotoChallenge = () => {
     if (!currentRoom?.id) return;
     setLoading(true);
     setError('');
-
     try {
       await loadRoomData(currentRoom.id);
     } catch (err) {
@@ -206,6 +312,20 @@ const PhotoChallenge = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const leaveRoom = () => {
+    clearSession();
+    setGameState('home');
+    setCurrentRoom(null);
+    setCurrentUser(null);
+    setParticipants([]);
+    setChallenges([]);
+    setSubmissions({});
+    setSelectedImage(null);
+    setError('');
+    setInputCode('');
+    setInputNick('');
   };
 
   const submitChallenge = async (challengeId) => {
@@ -224,7 +344,7 @@ const PhotoChallenge = () => {
 
       try {
         const alreadySubmitted = (submissions[challengeId] || []).some(
-          sub => sub.participant_id === currentUser.id
+          (sub) => sub.participant_id === currentUser.id
         );
 
         if (alreadySubmitted) {
@@ -236,8 +356,7 @@ const PhotoChallenge = () => {
           .toString(36)
           .slice(2)}.${ext}`;
 
-        const { error: uploadError } = await supabase
-          .storage
+        const { error: uploadError } = await supabase.storage
           .from('photos')
           .upload(fileName, file, {
             cacheControl: '3600',
@@ -247,8 +366,7 @@ const PhotoChallenge = () => {
 
         if (uploadError) throw uploadError;
 
-        const { data: publicUrlData } = supabase
-          .storage
+        const { data: publicUrlData } = supabase.storage
           .from('photos')
           .getPublicUrl(fileName);
 
@@ -256,11 +374,13 @@ const PhotoChallenge = () => {
 
         const { error: insertError } = await supabase
           .from('submissions')
-          .insert([{
-            challenge_id: challengeId,
-            participant_id: currentUser.id,
-            image_url: imageUrl,
-          }]);
+          .insert([
+            {
+              challenge_id: challengeId,
+              participant_id: currentUser.id,
+              image_url: imageUrl,
+            },
+          ]);
 
         if (insertError) throw insertError;
 
@@ -279,14 +399,14 @@ const PhotoChallenge = () => {
   const getRanking = () => {
     const stats = {};
 
-    participants.forEach(p => {
+    participants.forEach((p) => {
       if (!stats[p.id]) {
         stats[p.id] = { nick: p.nickname, color: p.avatar_color, count: 0 };
       }
     });
 
-    Object.values(submissions).forEach(subs => {
-      subs.forEach(sub => {
+    Object.values(submissions).forEach((subs) => {
+      subs.forEach((sub) => {
         if (stats[sub.participant_id]) stats[sub.participant_id].count++;
       });
     });
@@ -355,19 +475,7 @@ const PhotoChallenge = () => {
             <button onClick={refreshRoom} disabled={loading} style={{ padding: '0.6rem 1rem', background: '#667eea', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.9rem', fontWeight: '600', opacity: loading ? 0.6 : 1 }}>
               ↻ Recargar
             </button>
-            <button
-              onClick={() => {
-                setGameState('home');
-                setCurrentRoom(null);
-                setCurrentUser(null);
-                setParticipants([]);
-                setChallenges([]);
-                setSubmissions({});
-                setSelectedImage(null);
-                setError('');
-              }}
-              style={{ padding: '0.6rem 1.2rem', background: '#f5f5f5', border: 'none', borderRadius: '6px', cursor: 'pointer', color: '#333', fontSize: '0.9rem', fontWeight: '500' }}
-            >
+            <button onClick={leaveRoom} style={{ padding: '0.6rem 1.2rem', background: '#f5f5f5', border: 'none', borderRadius: '6px', cursor: 'pointer', color: '#333', fontSize: '0.9rem', fontWeight: '500' }}>
               Salir
             </button>
           </div>
@@ -388,7 +496,7 @@ const PhotoChallenge = () => {
         <div style={{ background: 'white', margin: '0 1rem 1rem', padding: '1.2rem', borderRadius: '8px' }}>
           <h3 style={{ margin: '0 0 1rem 0', fontSize: '1rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '0.6rem' }}><Users size={18} /> {participants.length} participantes</h3>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(75px, 1fr))', gap: '0.8rem' }}>
-            {participants.map(p => (
+            {participants.map((p) => (
               <div key={p.id} style={{ padding: '0.8rem', background: p.avatar_color, color: 'white', borderRadius: '6px', textAlign: 'center', fontSize: '0.8rem', fontWeight: '600' }}>
                 {p.nickname}
               </div>
@@ -410,9 +518,9 @@ const PhotoChallenge = () => {
 
         <div style={{ padding: '0 1rem' }}>
           <h2 style={{ fontSize: '1.2rem', fontWeight: '700', marginBottom: '1.2rem', color: '#333' }}>Retos</h2>
-          {challenges.map(ch => {
+          {challenges.map((ch) => {
             const subs = submissions[ch.id] || [];
-            const userSubmitted = subs.some(s => s.participant_id === currentUser.id);
+            const userSubmitted = subs.some((s) => s.participant_id === currentUser.id);
 
             return (
               <div key={ch.id} style={{ background: 'white', marginBottom: '1rem', borderRadius: '8px', overflow: 'hidden', border: userSubmitted ? '2px solid #4ECDC4' : '1px solid #e0e0e0' }}>
@@ -437,7 +545,7 @@ const PhotoChallenge = () => {
                   <div style={{ padding: '1.2rem', background: '#f9f9f9', borderTop: '1px solid #e0e0e0' }}>
                     <p style={{ fontSize: '0.8rem', color: '#999', margin: '0 0 0.8rem 0', fontWeight: '600' }}>Enviadas ({subs.length})</p>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.8rem' }}>
-                      {subs.map(sub => (
+                      {subs.map((sub) => (
                         <div
                           key={sub.id}
                           onClick={() => setSelectedImage(sub.image_url)}
