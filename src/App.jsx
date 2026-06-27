@@ -4,7 +4,7 @@ import { Camera, Users, Trophy } from 'lucide-react';
 
 // REEMPLAZA AQUÍ CON TUS CREDENCIALES
 const SUPABASE_URL = 'https://ngvsqgjuinpwncpxzjth.supabase.co/rest/v1/';
-const SUPABASE_ANON_KEY = 'PnATXNzL4r2ciCmR';
+const SUPABASE_ANON_KEY = 'sb_publishable_d53jWPWx1rU20L9QBNMQRQ_ZGedNEbA';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
