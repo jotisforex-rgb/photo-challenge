@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { Camera, LogOut, Users, Trophy } from 'lucide-react';
+import { Camera, Users, Trophy } from 'lucide-react';
 
-// REEMPLAZA ESTAS LÍNEAS CON TUS CREDENCIALES DE SUPABASE
-const SUPABASE_URL = 'supabase https://ngvsqgjuinpwncpxzjth.supabase.co/rest/v1/';
+// REEMPLAZA AQUÍ CON TUS CREDENCIALES
+const SUPABASE_URL = 'https://ngvsqgjuinpwncpxzjth.supabase.co/rest/v1/';
 const SUPABASE_ANON_KEY = 'PnATXNzL4r2ciCmR';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -24,17 +24,15 @@ const PhotoChallenge = () => {
 
   const challengesList = [
     { title: '🤪 Selfie Extremo', desc: 'Cara más ridícula posible' },
-    { title: '✈️ Defying Gravity', desc: 'Saltando bien alto (borrosa = épica)' },
-    { title: '🎭 Todos Iguales', desc: 'Grupo con la MISMA pose absurda' },
-    { title: '🪞 Espejo del Alma', desc: 'Tu reflejo en algo creativo' },
+    { title: '✈️ Defying Gravity', desc: 'Saltando bien alto' },
+    { title: '🎭 Todos Iguales', desc: 'Grupo con la MISMA pose' },
+    { title: '🪞 Espejo del Alma', desc: 'Tu reflejo en algo' },
     { title: '🏛️ Monumento Nuestro', desc: 'Vosotros en algo icónico' },
   ];
 
-  // Crear sala
   const createRoom = async () => {
     if (!inputNick) return;
     setLoading(true);
-    setError('');
     try {
       const code = Math.random().toString(36).substring(2, 8).toUpperCase();
       
@@ -46,38 +44,32 @@ const PhotoChallenge = () => {
       if (roomError) throw roomError;
 
       const roomId = roomData[0].id;
-
-      // Crear participante
       const userColor = colors[0];
-      const { data: userdata, error: userError } = await supabase
+
+      const { data: userData } = await supabase
         .from('participants')
         .insert([{ room_id: roomId, nickname: inputNick, avatar_color: userColor }])
         .select();
 
-      if (userError) throw userError;
-
-      // Crear retos
       for (let i = 0; i < challengesList.length; i++) {
         await supabase
           .from('challenges')
           .insert([{ room_id: roomId, title: challengesList[i].title, description: challengesList[i].desc }]);
       }
 
-      setCurrentRoom({ id: roomId, code, name: inputNick });
-      setCurrentUser({ id: userdata[0].id, nick: inputNick, color: userColor });
+      setCurrentRoom({ id: roomId, code });
+      setCurrentUser({ id: userData[0].id, nick: inputNick, color: userColor });
       setGameState('play');
       loadRoomData(roomId);
     } catch (err) {
-      setError('Error al crear sala: ' + err.message);
+      setError(err.message);
     }
     setLoading(false);
   };
 
-  // Unirse a sala
   const joinRoom = async () => {
     if (!inputCode || !inputNick) return;
     setLoading(true);
-    setError('');
     try {
       const { data: roomData, error: roomError } = await supabase
         .from('rooms')
@@ -85,27 +77,24 @@ const PhotoChallenge = () => {
         .eq('code', inputCode)
         .single();
 
-      if (roomError || !roomData) throw new Error('Sala no encontrada');
+      if (roomError) throw new Error('Sala no encontrada');
 
       const userColor = colors[Math.floor(Math.random() * colors.length)];
-      const { data: userData, error: userError } = await supabase
+      const { data: userData } = await supabase
         .from('participants')
         .insert([{ room_id: roomData.id, nickname: inputNick, avatar_color: userColor }])
         .select();
-
-      if (userError) throw userError;
 
       setCurrentRoom(roomData);
       setCurrentUser({ id: userData[0].id, nick: inputNick, color: userColor });
       setGameState('play');
       loadRoomData(roomData.id);
     } catch (err) {
-      setError('Error: ' + err.message);
+      setError(err.message);
     }
     setLoading(false);
   };
 
-  // Cargar datos de la sala
   const loadRoomData = async (roomId) => {
     try {
       const { data: challengeData } = await supabase
@@ -136,23 +125,11 @@ const PhotoChallenge = () => {
       });
 
       setSubmissions(submissionsByChallenge);
-
-      // Subscripciones en tiempo real
-      supabase
-        .channel(`room:${roomId}`)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'participants', filter: `room_id=eq.${roomId}` }, (payload) => {
-          loadRoomData(roomId);
-        })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'submissions' }, (payload) => {
-          loadRoomData(roomId);
-        })
-        .subscribe();
     } catch (err) {
-      setError('Error cargando datos: ' + err.message);
+      console.error(err);
     }
   };
 
-  // Subir foto
   const submitChallenge = async (challengeId) => {
     if (!currentUser) return;
     setLoading(true);
@@ -165,15 +142,11 @@ const PhotoChallenge = () => {
         if (!file) return;
 
         const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}`;
-        const { error: uploadError } = await supabase.storage
-          .from('photos')
-          .upload(fileName, file);
-
-        if (uploadError) throw uploadError;
+        await supabase.storage.from('photos').upload(fileName, file);
 
         const imageUrl = `${SUPABASE_URL}/storage/v1/object/public/photos/${fileName}`;
 
-        const { error: submitError } = await supabase
+        await supabase
           .from('submissions')
           .insert([{
             challenge_id: challengeId,
@@ -181,18 +154,15 @@ const PhotoChallenge = () => {
             image_url: imageUrl,
           }]);
 
-        if (submitError) throw submitError;
-
         loadRoomData(currentRoom.id);
       };
       input.click();
     } catch (err) {
-      setError('Error subiendo foto: ' + err.message);
+      setError(err.message);
     }
     setLoading(false);
   };
 
-  // Ranking
   const getRanking = () => {
     const stats = {};
     participants.forEach(p => {
@@ -206,39 +176,29 @@ const PhotoChallenge = () => {
     return Object.values(stats).sort((a, b) => b.count - a.count).slice(0, 5);
   };
 
-  // VISTA: HOME
   if (gameState === 'home') {
     return (
       <div style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', padding: '2rem', textAlign: 'center', color: 'white', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
         <div style={{ fontSize: '3.5rem', marginBottom: '1rem' }}>📸</div>
         <h1 style={{ fontSize: '2.2rem', marginBottom: '0.5rem', fontWeight: '700' }}>Photo Challenge</h1>
-        <p style={{ fontSize: '1rem', marginBottom: '2.5rem', opacity: 0.9 }}>Retos épicos con amigos en tiempo real</p>
-        
+        <p style={{ fontSize: '1rem', marginBottom: '2.5rem', opacity: 0.9 }}>Retos épicos con amigos</p>
         <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', maxWidth: '320px' }}>
-          <button onClick={() => setGameState('create')} style={{ padding: '1rem 2rem', fontSize: '1rem', background: 'white', color: '#667eea', border: 'none', borderRadius: '8px', fontWeight: '600', cursor: 'pointer', flex: 1, minWidth: '140px' }}>
-            + Crear sala
-          </button>
-          <button onClick={() => setGameState('join')} style={{ padding: '1rem 2rem', fontSize: '1rem', background: 'rgba(255,255,255,0.2)', color: 'white', border: '2px solid white', borderRadius: '8px', fontWeight: '600', cursor: 'pointer', flex: 1, minWidth: '140px' }}>
-            Unirse
-          </button>
+          <button onClick={() => setGameState('create')} style={{ padding: '1rem 2rem', fontSize: '1rem', background: 'white', color: '#667eea', border: 'none', borderRadius: '8px', fontWeight: '600', cursor: 'pointer', flex: 1, minWidth: '140px' }}>+ Crear sala</button>
+          <button onClick={() => setGameState('join')} style={{ padding: '1rem 2rem', fontSize: '1rem', background: 'rgba(255,255,255,0.2)', color: 'white', border: '2px solid white', borderRadius: '8px', fontWeight: '600', cursor: 'pointer', flex: 1, minWidth: '140px' }}>Unirse</button>
         </div>
       </div>
     );
   }
 
-  // VISTA: CREATE
   if (gameState === 'create') {
     return (
       <div style={{ minHeight: '100vh', background: '#f5f5f5', padding: '1.5rem' }}>
         <button onClick={() => setGameState('home')} style={{ padding: '0.6rem 1.2rem', marginBottom: '2rem', background: '#667eea', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>← Atrás</button>
-        
         <div style={{ background: 'white', padding: '2rem', borderRadius: '12px', maxWidth: '400px', margin: '0 auto' }}>
           <h2 style={{ marginBottom: '1.5rem', fontSize: '1.5rem', fontWeight: '700' }}>Crear quedada</h2>
           {error && <p style={{ color: 'red', marginBottom: '1rem' }}>{error}</p>}
-          
-          <input value={inputNick} onChange={(e) => setInputNick(e.target.value)} placeholder="Tu nombre" style={{ width: '100%', padding: '0.9rem', marginBottom: '1.5rem', border: '1px solid #ddd', borderRadius: '6px', fontSize: '1rem' }} />
-          
-          <button onClick={createRoom} disabled={!inputNick || loading} style={{ width: '100%', padding: '1rem', background: inputNick && !loading ? '#667eea' : '#ccc', color: 'white', border: 'none', borderRadius: '6px', fontWeight: '600', cursor: inputNick && !loading ? 'pointer' : 'not-allowed', fontSize: '1rem' }}>
+          <input value={inputNick} onChange={(e) => setInputNick(e.target.value)} placeholder="Tu nombre" style={{ width: '100%', padding: '0.9rem', marginBottom: '1.5rem', border: '1px solid #ddd', borderRadius: '6px', fontSize: '1rem', boxSizing: 'border-box' }} />
+          <button onClick={createRoom} disabled={!inputNick || loading} style={{ width: '100%', padding: '1rem', background: inputNick && !loading ? '#667eea' : '#ccc', color: 'white', border: 'none', borderRadius: '6px', fontWeight: '600', cursor: 'pointer', fontSize: '1rem' }}>
             {loading ? 'Creando...' : 'Crear sala'}
           </button>
         </div>
@@ -246,21 +206,16 @@ const PhotoChallenge = () => {
     );
   }
 
-  // VISTA: JOIN
   if (gameState === 'join') {
     return (
       <div style={{ minHeight: '100vh', background: '#f5f5f5', padding: '1.5rem' }}>
         <button onClick={() => setGameState('home')} style={{ padding: '0.6rem 1.2rem', marginBottom: '2rem', background: '#667eea', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>← Atrás</button>
-        
         <div style={{ background: 'white', padding: '2rem', borderRadius: '12px', maxWidth: '400px', margin: '0 auto' }}>
           <h2 style={{ marginBottom: '1.5rem', fontSize: '1.5rem', fontWeight: '700' }}>Unirse a quedada</h2>
           {error && <p style={{ color: 'red', marginBottom: '1rem' }}>{error}</p>}
-          
-          <input value={inputCode} onChange={(e) => setInputCode(e.target.value.toUpperCase())} placeholder="Código" maxLength="6" style={{ width: '100%', padding: '0.9rem', marginBottom: '1rem', border: '2px solid #ddd', borderRadius: '6px', fontSize: '1.2rem', textAlign: 'center', fontWeight: '700', letterSpacing: '2px' }} />
-          
-          <input value={inputNick} onChange={(e) => setInputNick(e.target.value)} placeholder="Tu nombre" style={{ width: '100%', padding: '0.9rem', marginBottom: '1.5rem', border: '1px solid #ddd', borderRadius: '6px', fontSize: '1rem' }} />
-          
-          <button onClick={joinRoom} disabled={!inputCode || !inputNick || loading} style={{ width: '100%', padding: '1rem', background: (inputCode && inputNick && !loading) ? '#667eea' : '#ccc', color: 'white', border: 'none', borderRadius: '6px', fontWeight: '600', cursor: (inputCode && inputNick && !loading) ? 'pointer' : 'not-allowed', fontSize: '1rem' }}>
+          <input value={inputCode} onChange={(e) => setInputCode(e.target.value.toUpperCase())} placeholder="Código" maxLength="6" style={{ width: '100%', padding: '0.9rem', marginBottom: '1rem', border: '2px solid #ddd', borderRadius: '6px', fontSize: '1.2rem', textAlign: 'center', fontWeight: '700', letterSpacing: '2px', boxSizing: 'border-box' }} />
+          <input value={inputNick} onChange={(e) => setInputNick(e.target.value)} placeholder="Tu nombre" style={{ width: '100%', padding: '0.9rem', marginBottom: '1.5rem', border: '1px solid #ddd', borderRadius: '6px', fontSize: '1rem', boxSizing: 'border-box' }} />
+          <button onClick={joinRoom} disabled={!inputCode || !inputNick || loading} style={{ width: '100%', padding: '1rem', background: (inputCode && inputNick && !loading) ? '#667eea' : '#ccc', color: 'white', border: 'none', borderRadius: '6px', fontWeight: '600', cursor: 'pointer', fontSize: '1rem' }}>
             {loading ? 'Entrando...' : 'Entrar'}
           </button>
         </div>
@@ -268,10 +223,8 @@ const PhotoChallenge = () => {
     );
   }
 
-  // VISTA: PLAY
   if (gameState === 'play' && currentRoom && currentUser) {
     const ranking = getRanking();
-
     return (
       <div style={{ minHeight: '100vh', background: '#f8f9fa', paddingBottom: '2rem' }}>
         <div style={{ background: 'white', borderBottom: '1px solid #e0e0e0', padding: '1.2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, zIndex: 10 }}>
@@ -279,48 +232,34 @@ const PhotoChallenge = () => {
             <h1 style={{ margin: '0 0 0.3rem 0', fontSize: '1.3rem', fontWeight: '700' }}>Quedada</h1>
             <div style={{ fontSize: '0.75rem', color: '#999', letterSpacing: '1.5px', fontWeight: '700' }}>{currentRoom.code}</div>
           </div>
-          <button onClick={() => { setGameState('home'); setCurrentRoom(null); setCurrentUser(null); }} style={{ padding: '0.6rem 1.2rem', background: '#f5f5f5', border: 'none', borderRadius: '6px', cursor: 'pointer', color: '#333', fontSize: '0.9rem', fontWeight: '500' }}>
-            Salir
-          </button>
+          <button onClick={() => { setGameState('home'); setCurrentRoom(null); setCurrentUser(null); }} style={{ padding: '0.6rem 1.2rem', background: '#f5f5f5', border: 'none', borderRadius: '6px', cursor: 'pointer', color: '#333', fontSize: '0.9rem', fontWeight: '500' }}>Salir</button>
         </div>
 
         <div style={{ background: 'white', margin: '1rem', padding: '1.2rem', borderRadius: '8px', textAlign: 'center', borderLeft: '4px solid #667eea' }}>
           <p style={{ fontSize: '0.85rem', color: '#999', margin: '0 0 0.7rem 0', fontWeight: '500' }}>Código de sala</p>
           <div style={{ fontSize: '2.2rem', fontWeight: '800', color: '#667eea', letterSpacing: '3px', marginBottom: '1rem', fontFamily: 'monospace' }}>{currentRoom.code}</div>
-          <button onClick={() => navigator.clipboard.writeText(currentRoom.code)} style={{ padding: '0.6rem 1.2rem', background: '#667eea', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.95rem', fontWeight: '600' }}>
-            📋 Copiar
-          </button>
+          <button onClick={() => navigator.clipboard.writeText(currentRoom.code)} style={{ padding: '0.6rem 1.2rem', background: '#667eea', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.95rem', fontWeight: '600' }}>📋 Copiar</button>
         </div>
 
         <div style={{ background: 'white', margin: '0 1rem 1rem', padding: '1.2rem', borderRadius: '8px' }}>
-          <h3 style={{ margin: '0 0 1rem 0', fontSize: '1rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-            <Users size={18} /> {participants.length} participantes
-          </h3>
+          <h3 style={{ margin: '0 0 1rem 0', fontSize: '1rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '0.6rem' }}><Users size={18} /> {participants.length} participantes</h3>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(75px, 1fr))', gap: '0.8rem' }}>
             {participants.map(p => (
-              <div key={p.id} style={{ padding: '0.8rem', background: p.avatar_color, color: 'white', borderRadius: '6px', textAlign: 'center', fontSize: '0.8rem', fontWeight: '600' }}>
-                {p.nickname}
-              </div>
+              <div key={p.id} style={{ padding: '0.8rem', background: p.avatar_color, color: 'white', borderRadius: '6px', textAlign: 'center', fontSize: '0.8rem', fontWeight: '600' }}>{p.nickname}</div>
             ))}
           </div>
         </div>
 
         <div style={{ background: 'white', margin: '0 1rem 1rem', padding: '1.2rem', borderRadius: '8px' }}>
-          <h3 style={{ margin: '0 0 1rem 0', fontSize: '1rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-            <Trophy size={18} /> Top ranking
-          </h3>
-          {ranking.length > 0 ? (
-            ranking.map((r, i) => (
-              <div key={r.nick} style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', padding: '0.8rem 0', borderBottom: i < ranking.length - 1 ? '1px solid #f0f0f0' : 'none' }}>
-                <div style={{ fontSize: '1.3rem', fontWeight: '800', color: '#999', minWidth: '28px' }}>{i + 1}</div>
-                <div style={{ width: '32px', height: '32px', background: r.color, borderRadius: '50%', flexShrink: 0 }} />
-                <div style={{ flex: 1, fontSize: '0.95rem', color: '#333', fontWeight: '500' }}>{r.nick}</div>
-                <div style={{ fontWeight: '700', color: '#667eea', fontSize: '1.1rem' }}>{r.count}</div>
-              </div>
-            ))
-          ) : (
-            <p style={{ color: '#999', fontSize: '0.9rem' }}>Sin envíos aún</p>
-          )}
+          <h3 style={{ margin: '0 0 1rem 0', fontSize: '1rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '0.6rem' }}><Trophy size={18} /> Top ranking</h3>
+          {ranking.map((r, i) => (
+            <div key={r.nick} style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', padding: '0.8rem 0', borderBottom: i < ranking.length - 1 ? '1px solid #f0f0f0' : 'none' }}>
+              <div style={{ fontSize: '1.3rem', fontWeight: '800', color: '#999', minWidth: '28px' }}>{i + 1}</div>
+              <div style={{ width: '32px', height: '32px', background: r.color, borderRadius: '50%' }} />
+              <div style={{ flex: 1, fontSize: '0.95rem', color: '#333', fontWeight: '500' }}>{r.nick}</div>
+              <div style={{ fontWeight: '700', color: '#667eea', fontSize: '1.1rem' }}>{r.count}</div>
+            </div>
+          ))}
         </div>
 
         <div style={{ padding: '0 1rem' }}>
@@ -328,7 +267,6 @@ const PhotoChallenge = () => {
           {challenges.map(ch => {
             const subs = submissions[ch.id] || [];
             const userSubmitted = subs.some(s => s.participant_id === currentUser.id);
-
             return (
               <div key={ch.id} style={{ background: 'white', marginBottom: '1rem', borderRadius: '8px', overflow: 'hidden', border: userSubmitted ? '2px solid #4ECDC4' : '1px solid #e0e0e0' }}>
                 <div style={{ padding: '1.2rem', background: userSubmitted ? 'rgba(78, 205, 196, 0.08)' : 'white' }}>
@@ -337,23 +275,19 @@ const PhotoChallenge = () => {
                       <h4 style={{ margin: '0 0 0.3rem 0', fontSize: '1.05rem', fontWeight: '700', color: '#333' }}>{ch.title}</h4>
                       <p style={{ margin: 0, fontSize: '0.85rem', color: '#999' }}>{ch.description}</p>
                     </div>
-                    <div style={{ background: '#f0f0f0', padding: '0.4rem 0.9rem', borderRadius: '4px', fontSize: '0.85rem', fontWeight: '700', color: '#666', whiteSpace: 'nowrap', marginLeft: '0.8rem' }}>
-                      {subs.length}
-                    </div>
+                    <div style={{ background: '#f0f0f0', padding: '0.4rem 0.9rem', borderRadius: '4px', fontSize: '0.85rem', fontWeight: '700', color: '#666', whiteSpace: 'nowrap', marginLeft: '0.8rem' }}>{subs.length}</div>
                   </div>
-
-                  <button onClick={() => submitChallenge(ch.id)} disabled={loading} style={{ width: '100%', padding: '0.9rem', background: userSubmitted ? '#4ECDC4' : '#667eea', color: 'white', border: 'none', borderRadius: '6px', fontWeight: '600', cursor: loading ? 'not-allowed' : 'pointer', fontSize: '1rem', marginTop: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.6rem', opacity: loading ? 0.6 : 1 }}>
+                  <button onClick={() => submitChallenge(ch.id)} disabled={loading} style={{ width: '100%', padding: '0.9rem', background: userSubmitted ? '#4ECDC4' : '#667eea', color: 'white', border: 'none', borderRadius: '6px', fontWeight: '600', cursor: 'pointer', fontSize: '1rem', marginTop: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.6rem', opacity: loading ? 0.6 : 1 }}>
                     <Camera size={18} />
                     {userSubmitted ? '✓ Completado' : 'Enviar foto'}
                   </button>
                 </div>
-
                 {subs.length > 0 && (
                   <div style={{ padding: '1.2rem', background: '#f9f9f9', borderTop: '1px solid #e0e0e0' }}>
                     <p style={{ fontSize: '0.8rem', color: '#999', margin: '0 0 0.8rem 0', fontWeight: '600' }}>Enviadas ({subs.length})</p>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.8rem' }}>
                       {subs.map(sub => (
-                        <div key={sub.id} style={{ aspectRatio: '1', borderRadius: '6px', overflow: 'hidden', border: '1px solid #ddd', background: '#eee' }}>
+                        <div key={sub.id} style={{ aspectRatio: '1', borderRadius: '6px', overflow: 'hidden', border: '1px solid #ddd' }}>
                           <img src={sub.image_url} alt="submission" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                         </div>
                       ))}
