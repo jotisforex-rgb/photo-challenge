@@ -1,15 +1,67 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { Camera, Users, Trophy } from 'lucide-react';
+import { Camera, Users, Trophy, Eye, EyeOff, Copy, LogOut, RefreshCw, Sparkles } from 'lucide-react';
 
 const SUPABASE_URL = 'https://ngvsqgjuinpwncpxzjth.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_d53jWPWx1rU20L9QBNMQRQ_ZGedNEbA';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
 const STORAGE_KEY = 'photo_challenge_session';
 
-const PhotoChallenge = () => {
+const colors = ['#ff6b6b', '#4ecdc4', '#45b7d1', '#f7b267', '#7b61ff', '#f4845f'];
+
+const challengesList = [
+  { title: '📸 Foto robada', desc: 'Pilla a alguien sin que pose' },
+  { title: '😂 Momento pillado', desc: 'Una reacción real y graciosa' },
+  { title: '🍷 Paparazzi de mesa', desc: 'La cena como si hubiera prensa' },
+  { title: '🕵️ Cámara espía', desc: 'Un encuadre raro o sospechoso' },
+  { title: '✨ Caos elegante', desc: 'Algo absurdo pero con estilo' },
+];
+
+const pageBg = 'linear-gradient(180deg, #fff7ed 0%, #fffaf5 45%, #fff 100%)';
+const heroBg = 'linear-gradient(135deg, #7c3aed 0%, #ec4899 45%, #f59e0b 100%)';
+
+const cardStyle = {
+  background: 'rgba(255,255,255,0.88)',
+  backdropFilter: 'blur(12px)',
+  WebkitBackdropFilter: 'blur(12px)',
+  border: '1px solid rgba(255,255,255,0.6)',
+  borderRadius: '20px',
+  boxShadow: '0 14px 38px rgba(124, 58, 237, 0.10)',
+};
+
+const buttonPrimary = {
+  background: 'linear-gradient(135deg, #7c3aed 0%, #ec4899 100%)',
+  color: 'white',
+  border: 'none',
+  borderRadius: '14px',
+  fontWeight: 700,
+  cursor: 'pointer',
+  boxShadow: '0 10px 24px rgba(124,58,237,0.22)',
+};
+
+const buttonSoft = {
+  background: '#fff',
+  color: '#4b5563',
+  border: '1px solid #ece7f5',
+  borderRadius: '14px',
+  fontWeight: 600,
+  cursor: 'pointer',
+};
+
+const inputStyle = {
+  width: '100%',
+  padding: '0.95rem 1rem',
+  marginBottom: '1rem',
+  border: '1px solid #e7dff5',
+  borderRadius: '14px',
+  fontSize: '1rem',
+  boxSizing: 'border-box',
+  background: '#fff',
+  outline: 'none',
+};
+
+export default function PhotoChallenge() {
   const [gameState, setGameState] = useState('home');
   const [currentRoom, setCurrentRoom] = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
@@ -21,25 +73,18 @@ const PhotoChallenge = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [selectedImage, setSelectedImage] = useState(null);
+  const [revealedAuthors, setRevealedAuthors] = useState({});
 
-  const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8', '#F7DC6F'];
-
-  const challengesList = [
-    { title: '🤪 Selfie Extremo', desc: 'Cara más ridícula posible' },
-    { title: '✈️ Defying Gravity', desc: 'Saltando bien alto' },
-    { title: '🎭 Todos Iguales', desc: 'Grupo con la MISMA pose' },
-    { title: '🪞 Espejo del Alma', desc: 'Tu reflejo en algo' },
-    { title: '🏛️ Monumento Nuestro', desc: 'Vosotros en algo icónico' },
-  ];
+  const participantsById = useMemo(() => {
+    const map = {};
+    participants.forEach((p) => {
+      map[p.id] = p;
+    });
+    return map;
+  }, [participants]);
 
   const saveSession = (room, user) => {
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({
-        room,
-        user,
-      })
-    );
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ room, user }));
   };
 
   const clearSession = () => {
@@ -67,8 +112,7 @@ const PhotoChallenge = () => {
       setParticipants(participantData || []);
 
       const challengeIds = (challengeData || []).map((c) => c.id);
-
-      if (challengeIds.length === 0) {
+      if (!challengeIds.length) {
         setSubmissions({});
         return;
       }
@@ -80,18 +124,16 @@ const PhotoChallenge = () => {
 
       if (submissionError) throw submissionError;
 
-      const submissionsByChallenge = {};
+      const grouped = {};
       (submissionData || []).forEach((sub) => {
-        if (!submissionsByChallenge[sub.challenge_id]) {
-          submissionsByChallenge[sub.challenge_id] = [];
-        }
-        submissionsByChallenge[sub.challenge_id].push(sub);
+        if (!grouped[sub.challenge_id]) grouped[sub.challenge_id] = [];
+        grouped[sub.challenge_id].push(sub);
       });
 
-      setSubmissions(submissionsByChallenge);
+      setSubmissions(grouped);
     } catch (err) {
       console.error(err);
-      setError(err.message);
+      setError(err.message || 'Error cargando la sala');
     }
   };
 
@@ -126,14 +168,17 @@ const PhotoChallenge = () => {
         return;
       }
 
-      setCurrentRoom(roomData);
-      setCurrentUser({
+      const room = { id: roomData.id, code: roomData.code };
+      const user = {
         id: userData.id,
         nick: userData.nickname,
         color: userData.avatar_color,
-      });
+      };
+
+      setCurrentRoom(room);
+      setCurrentUser(user);
       setGameState('play');
-      await loadRoomData(roomData.id);
+      await loadRoomData(room.id);
     } catch (err) {
       console.error(err);
       clearSession();
@@ -153,20 +198,18 @@ const PhotoChallenge = () => {
       loadRoomData(currentRoom.id);
     }, 3000);
 
-    const handleFocus = () => loadRoomData(currentRoom.id);
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible') {
-        loadRoomData(currentRoom.id);
-      }
+    const onFocus = () => loadRoomData(currentRoom.id);
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') loadRoomData(currentRoom.id);
     };
 
-    window.addEventListener('focus', handleFocus);
-    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisibility);
 
     return () => {
       clearInterval(interval);
-      window.removeEventListener('focus', handleFocus);
-      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [gameState, currentRoom?.id]);
 
@@ -216,9 +259,9 @@ const PhotoChallenge = () => {
       setCurrentUser(user);
       saveSession(room, user);
       setGameState('play');
-      await loadRoomData(roomData.id);
+      await loadRoomData(room.id);
     } catch (err) {
-      setError(err.message);
+      setError(err.message || 'Error creando la sala');
     } finally {
       setLoading(false);
     }
@@ -293,7 +336,7 @@ const PhotoChallenge = () => {
       setCurrentUser(user);
       saveSession(room, user);
       setGameState('play');
-      await loadRoomData(roomData.id);
+      await loadRoomData(room.id);
     } catch (err) {
       setError(err.message || 'Error al entrar en la sala');
     } finally {
@@ -323,9 +366,17 @@ const PhotoChallenge = () => {
     setChallenges([]);
     setSubmissions({});
     setSelectedImage(null);
+    setRevealedAuthors({});
     setError('');
     setInputCode('');
     setInputNick('');
+  };
+
+  const toggleReveal = (submissionId) => {
+    setRevealedAuthors((prev) => ({
+      ...prev,
+      [submissionId]: !prev[submissionId],
+    }));
   };
 
   const submitChallenge = async (challengeId) => {
@@ -352,9 +403,7 @@ const PhotoChallenge = () => {
         }
 
         const ext = file.name.split('.').pop() || 'jpg';
-        const fileName = `${currentRoom.id}/${Date.now()}_${Math.random()
-          .toString(36)
-          .slice(2)}.${ext}`;
+        const fileName = `${currentRoom.id}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
 
         const { error: uploadError } = await supabase.storage
           .from('photos')
@@ -386,8 +435,8 @@ const PhotoChallenge = () => {
 
         await loadRoomData(currentRoom.id);
       } catch (err) {
-        console.error('Error subiendo foto:', err);
-        setError(err.message);
+        console.error(err);
+        setError(err.message || 'Error subiendo la foto');
       } finally {
         setLoading(false);
       }
@@ -416,13 +465,23 @@ const PhotoChallenge = () => {
 
   if (gameState === 'home') {
     return (
-      <div style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', padding: '2rem', textAlign: 'center', color: 'white', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
-        <div style={{ fontSize: '3.5rem', marginBottom: '1rem' }}>📸</div>
-        <h1 style={{ fontSize: '2.2rem', marginBottom: '0.5rem', fontWeight: '700' }}>Photo Challenge</h1>
-        <p style={{ fontSize: '1rem', marginBottom: '2.5rem', opacity: 0.9 }}>Retos épicos con amigos</p>
-        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', maxWidth: '320px' }}>
-          <button onClick={() => setGameState('create')} style={{ padding: '1rem 2rem', fontSize: '1rem', background: 'white', color: '#667eea', border: 'none', borderRadius: '8px', fontWeight: '600', cursor: 'pointer', flex: 1, minWidth: '140px' }}>+ Crear sala</button>
-          <button onClick={() => setGameState('join')} style={{ padding: '1rem 2rem', fontSize: '1rem', background: 'rgba(255,255,255,0.2)', color: 'white', border: '2px solid white', borderRadius: '8px', fontWeight: '600', cursor: 'pointer', flex: 1, minWidth: '140px' }}>Unirse</button>
+      <div style={{ minHeight: '100vh', background: heroBg, padding: '1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ ...cardStyle, maxWidth: '460px', width: '100%', padding: '2rem', textAlign: 'center' }}>
+          <div style={{ width: '74px', height: '74px', borderRadius: '22px', margin: '0 auto 1rem', background: 'linear-gradient(135deg, #7c3aed, #f59e0b)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 10px 30px rgba(124,58,237,0.22)' }}>
+            <Sparkles color="white" size={34} />
+          </div>
+          <h1 style={{ margin: 0, fontSize: '2.2rem', color: '#1f2937' }}>Cena Photo Game</h1>
+          <p style={{ margin: '0.8rem 0 2rem', color: '#6b7280', fontSize: '1rem' }}>
+            Fotos robadas, momentos pillados y caos elegante en solo 5 retos.
+          </p>
+          <div style={{ display: 'grid', gap: '0.9rem' }}>
+            <button onClick={() => setGameState('create')} style={{ ...buttonPrimary, padding: '1rem 1.2rem', fontSize: '1rem' }}>
+              + Crear sala
+            </button>
+            <button onClick={() => setGameState('join')} style={{ ...buttonSoft, padding: '1rem 1.2rem', fontSize: '1rem' }}>
+              Unirse a una sala
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -430,15 +489,20 @@ const PhotoChallenge = () => {
 
   if (gameState === 'create') {
     return (
-      <div style={{ minHeight: '100vh', background: '#f5f5f5', padding: '1.5rem' }}>
-        <button onClick={() => setGameState('home')} style={{ padding: '0.6rem 1.2rem', marginBottom: '2rem', background: '#667eea', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>← Atrás</button>
-        <div style={{ background: 'white', padding: '2rem', borderRadius: '12px', maxWidth: '400px', margin: '0 auto' }}>
-          <h2 style={{ marginBottom: '1.5rem', fontSize: '1.5rem', fontWeight: '700' }}>Crear quedada</h2>
-          {error && <p style={{ color: 'red', marginBottom: '1rem' }}>{error}</p>}
-          <input value={inputNick} onChange={(e) => setInputNick(e.target.value)} placeholder="Tu nombre" style={{ width: '100%', padding: '0.9rem', marginBottom: '1.5rem', border: '1px solid #ddd', borderRadius: '6px', fontSize: '1rem', boxSizing: 'border-box' }} />
-          <button onClick={createRoom} disabled={!inputNick || loading} style={{ width: '100%', padding: '1rem', background: inputNick && !loading ? '#667eea' : '#ccc', color: 'white', border: 'none', borderRadius: '6px', fontWeight: '600', cursor: 'pointer', fontSize: '1rem' }}>
-            {loading ? 'Creando...' : 'Crear sala'}
+      <div style={{ minHeight: '100vh', background: pageBg, padding: '1.5rem' }}>
+        <div style={{ maxWidth: '460px', margin: '0 auto' }}>
+          <button onClick={() => setGameState('home')} style={{ ...buttonSoft, padding: '0.75rem 1rem', marginBottom: '1rem' }}>
+            ← Atrás
           </button>
+          <div style={{ ...cardStyle, padding: '1.5rem' }}>
+            <h2 style={{ marginTop: 0, color: '#1f2937' }}>Crear sala</h2>
+            <p style={{ color: '#6b7280', marginTop: 0 }}>Empieza la partida y comparte el código con la mesa.</p>
+            {error && <p style={{ color: '#b91c1c', background: '#fee2e2', padding: '0.85rem', borderRadius: '12px' }}>{error}</p>}
+            <input value={inputNick} onChange={(e) => setInputNick(e.target.value)} placeholder="Tu nombre" style={inputStyle} />
+            <button onClick={createRoom} disabled={!inputNick || loading} style={{ ...buttonPrimary, width: '100%', padding: '1rem', opacity: !inputNick || loading ? 0.6 : 1 }}>
+              {loading ? 'Creando...' : 'Crear sala'}
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -446,16 +510,27 @@ const PhotoChallenge = () => {
 
   if (gameState === 'join') {
     return (
-      <div style={{ minHeight: '100vh', background: '#f5f5f5', padding: '1.5rem' }}>
-        <button onClick={() => setGameState('home')} style={{ padding: '0.6rem 1.2rem', marginBottom: '2rem', background: '#667eea', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>← Atrás</button>
-        <div style={{ background: 'white', padding: '2rem', borderRadius: '12px', maxWidth: '400px', margin: '0 auto' }}>
-          <h2 style={{ marginBottom: '1.5rem', fontSize: '1.5rem', fontWeight: '700' }}>Unirse a quedada</h2>
-          {error && <p style={{ color: 'red', marginBottom: '1rem' }}>{error}</p>}
-          <input value={inputCode} onChange={(e) => setInputCode(e.target.value.toUpperCase())} placeholder="Código" maxLength="6" style={{ width: '100%', padding: '0.9rem', marginBottom: '1rem', border: '2px solid #ddd', borderRadius: '6px', fontSize: '1.2rem', textAlign: 'center', fontWeight: '700', letterSpacing: '2px', boxSizing: 'border-box' }} />
-          <input value={inputNick} onChange={(e) => setInputNick(e.target.value)} placeholder="Tu nombre" style={{ width: '100%', padding: '0.9rem', marginBottom: '1.5rem', border: '1px solid #ddd', borderRadius: '6px', fontSize: '1rem', boxSizing: 'border-box' }} />
-          <button onClick={joinRoom} disabled={!inputCode || !inputNick || loading} style={{ width: '100%', padding: '1rem', background: (inputCode && inputNick && !loading) ? '#667eea' : '#ccc', color: 'white', border: 'none', borderRadius: '6px', fontWeight: '600', cursor: 'pointer', fontSize: '1rem' }}>
-            {loading ? 'Entrando...' : 'Entrar'}
+      <div style={{ minHeight: '100vh', background: pageBg, padding: '1.5rem' }}>
+        <div style={{ maxWidth: '460px', margin: '0 auto' }}>
+          <button onClick={() => setGameState('home')} style={{ ...buttonSoft, padding: '0.75rem 1rem', marginBottom: '1rem' }}>
+            ← Atrás
           </button>
+          <div style={{ ...cardStyle, padding: '1.5rem' }}>
+            <h2 style={{ marginTop: 0, color: '#1f2937' }}>Unirse a una sala</h2>
+            <p style={{ color: '#6b7280', marginTop: 0 }}>Pon el código y entra con tu nombre.</p>
+            {error && <p style={{ color: '#b91c1c', background: '#fee2e2', padding: '0.85rem', borderRadius: '12px' }}>{error}</p>}
+            <input
+              value={inputCode}
+              onChange={(e) => setInputCode(e.target.value.toUpperCase())}
+              placeholder="Código"
+              maxLength="6"
+              style={{ ...inputStyle, textAlign: 'center', fontWeight: 800, letterSpacing: '0.18em', fontSize: '1.2rem' }}
+            />
+            <input value={inputNick} onChange={(e) => setInputNick(e.target.value)} placeholder="Tu nombre" style={inputStyle} />
+            <button onClick={joinRoom} disabled={!inputCode || !inputNick || loading} style={{ ...buttonPrimary, width: '100%', padding: '1rem', opacity: !inputCode || !inputNick || loading ? 0.6 : 1 }}>
+              {loading ? 'Entrando...' : 'Entrar'}
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -465,101 +540,160 @@ const PhotoChallenge = () => {
     const ranking = getRanking();
 
     return (
-      <div style={{ minHeight: '100vh', background: '#f8f9fa', paddingBottom: '2rem' }}>
-        <div style={{ background: 'white', borderBottom: '1px solid #e0e0e0', padding: '1.2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, zIndex: 10 }}>
-          <div>
-            <h1 style={{ margin: '0 0 0.3rem 0', fontSize: '1.3rem', fontWeight: '700' }}>Quedada</h1>
-            <div style={{ fontSize: '0.75rem', color: '#999', letterSpacing: '1.5px', fontWeight: '700' }}>{currentRoom.code}</div>
-          </div>
-          <div style={{ display: 'flex', gap: '0.6rem' }}>
-            <button onClick={refreshRoom} disabled={loading} style={{ padding: '0.6rem 1rem', background: '#667eea', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.9rem', fontWeight: '600', opacity: loading ? 0.6 : 1 }}>
-              ↻ Recargar
-            </button>
-            <button onClick={leaveRoom} style={{ padding: '0.6rem 1.2rem', background: '#f5f5f5', border: 'none', borderRadius: '6px', cursor: 'pointer', color: '#333', fontSize: '0.9rem', fontWeight: '500' }}>
-              Salir
-            </button>
-          </div>
-        </div>
-
-        {error && (
-          <div style={{ margin: '1rem 1rem 0', background: '#ffe8e8', color: '#b00020', padding: '1rem', borderRadius: '8px', border: '1px solid #ffcaca' }}>
-            {error}
-          </div>
-        )}
-
-        <div style={{ background: 'white', margin: '1rem', padding: '1.2rem', borderRadius: '8px', textAlign: 'center', borderLeft: '4px solid #667eea' }}>
-          <p style={{ fontSize: '0.85rem', color: '#999', margin: '0 0 0.7rem 0', fontWeight: '500' }}>Código de sala</p>
-          <div style={{ fontSize: '2.2rem', fontWeight: '800', color: '#667eea', letterSpacing: '3px', marginBottom: '1rem', fontFamily: 'monospace' }}>{currentRoom.code}</div>
-          <button onClick={() => navigator.clipboard.writeText(currentRoom.code)} style={{ padding: '0.6rem 1.2rem', background: '#667eea', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.95rem', fontWeight: '600' }}>📋 Copiar</button>
-        </div>
-
-        <div style={{ background: 'white', margin: '0 1rem 1rem', padding: '1.2rem', borderRadius: '8px' }}>
-          <h3 style={{ margin: '0 0 1rem 0', fontSize: '1rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '0.6rem' }}><Users size={18} /> {participants.length} participantes</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(75px, 1fr))', gap: '0.8rem' }}>
-            {participants.map((p) => (
-              <div key={p.id} style={{ padding: '0.8rem', background: p.avatar_color, color: 'white', borderRadius: '6px', textAlign: 'center', fontSize: '0.8rem', fontWeight: '600' }}>
-                {p.nickname}
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div style={{ background: 'white', margin: '0 1rem 1rem', padding: '1.2rem', borderRadius: '8px' }}>
-          <h3 style={{ margin: '0 0 1rem 0', fontSize: '1rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '0.6rem' }}><Trophy size={18} /> Top ranking</h3>
-          {ranking.map((r, i) => (
-            <div key={`${r.nick}-${i}`} style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', padding: '0.8rem 0', borderBottom: i < ranking.length - 1 ? '1px solid #f0f0f0' : 'none' }}>
-              <div style={{ fontSize: '1.3rem', fontWeight: '800', color: '#999', minWidth: '28px' }}>{i + 1}</div>
-              <div style={{ width: '32px', height: '32px', background: r.color, borderRadius: '50%' }} />
-              <div style={{ flex: 1, fontSize: '0.95rem', color: '#333', fontWeight: '500' }}>{r.nick}</div>
-              <div style={{ fontWeight: '700', color: '#667eea', fontSize: '1.1rem' }}>{r.count}</div>
+      <div style={{ minHeight: '100vh', background: pageBg, paddingBottom: '2rem' }}>
+        <div style={{ position: 'sticky', top: 0, zIndex: 10, padding: '1rem' }}>
+          <div style={{ ...cardStyle, maxWidth: '1100px', margin: '0 auto', padding: '1rem 1.2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+            <div>
+              <div style={{ color: '#a855f7', fontWeight: 800, fontSize: '0.82rem', letterSpacing: '0.12em' }}>SALA</div>
+              <h1 style={{ margin: '0.2rem 0 0', fontSize: '1.5rem', color: '#1f2937' }}>{currentRoom.code}</h1>
             </div>
-          ))}
+            <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
+              <button onClick={refreshRoom} disabled={loading} style={{ ...buttonSoft, padding: '0.8rem 1rem', display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                <RefreshCw size={16} /> Recargar
+              </button>
+              <button onClick={() => navigator.clipboard.writeText(currentRoom.code)} style={{ ...buttonSoft, padding: '0.8rem 1rem', display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                <Copy size={16} /> Copiar código
+              </button>
+              <button onClick={leaveRoom} style={{ ...buttonSoft, padding: '0.8rem 1rem', display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                <LogOut size={16} /> Salir
+              </button>
+            </div>
+          </div>
         </div>
 
-        <div style={{ padding: '0 1rem' }}>
-          <h2 style={{ fontSize: '1.2rem', fontWeight: '700', marginBottom: '1.2rem', color: '#333' }}>Retos</h2>
-          {challenges.map((ch) => {
-            const subs = submissions[ch.id] || [];
-            const userSubmitted = subs.some((s) => s.participant_id === currentUser.id);
+        <div style={{ maxWidth: '1100px', margin: '0 auto', padding: '0 1rem' }}>
+          {error && (
+            <div style={{ background: '#fee2e2', color: '#b91c1c', padding: '1rem', borderRadius: '16px', marginBottom: '1rem' }}>
+              {error}
+            </div>
+          )}
 
-            return (
-              <div key={ch.id} style={{ background: 'white', marginBottom: '1rem', borderRadius: '8px', overflow: 'hidden', border: userSubmitted ? '2px solid #4ECDC4' : '1px solid #e0e0e0' }}>
-                <div style={{ padding: '1.2rem', background: userSubmitted ? 'rgba(78, 205, 196, 0.08)' : 'white' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '0.8rem' }}>
-                    <div>
-                      <h4 style={{ margin: '0 0 0.3rem 0', fontSize: '1.05rem', fontWeight: '700', color: '#333' }}>{ch.title}</h4>
-                      <p style={{ margin: 0, fontSize: '0.85rem', color: '#999' }}>{ch.description}</p>
-                    </div>
-                    <div style={{ background: '#f0f0f0', padding: '0.4rem 0.9rem', borderRadius: '4px', fontSize: '0.85rem', fontWeight: '700', color: '#666', whiteSpace: 'nowrap', marginLeft: '0.8rem' }}>
-                      {subs.length}
-                    </div>
-                  </div>
-
-                  <button onClick={() => submitChallenge(ch.id)} disabled={loading || userSubmitted} style={{ width: '100%', padding: '0.9rem', background: userSubmitted ? '#4ECDC4' : '#667eea', color: 'white', border: 'none', borderRadius: '6px', fontWeight: '600', cursor: userSubmitted ? 'default' : 'pointer', fontSize: '1rem', marginTop: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.6rem', opacity: loading ? 0.6 : 1 }}>
-                    <Camera size={18} />
-                    {userSubmitted ? '✓ Completado' : 'Enviar foto'}
-                  </button>
-                </div>
-
-                {subs.length > 0 && (
-                  <div style={{ padding: '1.2rem', background: '#f9f9f9', borderTop: '1px solid #e0e0e0' }}>
-                    <p style={{ fontSize: '0.8rem', color: '#999', margin: '0 0 0.8rem 0', fontWeight: '600' }}>Enviadas ({subs.length})</p>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.8rem' }}>
-                      {subs.map((sub) => (
-                        <div
-                          key={sub.id}
-                          onClick={() => setSelectedImage(sub.image_url)}
-                          style={{ aspectRatio: '1', borderRadius: '8px', overflow: 'hidden', border: '1px solid #ddd', background: '#eee', cursor: 'pointer' }}
-                        >
-                          <img src={sub.image_url} alt="submission" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+          <div style={{ display: 'grid', gap: '1rem', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', marginBottom: '1rem' }}>
+            <div style={{ ...cardStyle, padding: '1.2rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.5rem', color: '#7c3aed', fontWeight: 700 }}>
+                <Users size={18} /> Participantes
               </div>
-            );
-          })}
+              <div style={{ fontSize: '2rem', fontWeight: 800, color: '#1f2937', marginBottom: '0.75rem' }}>{participants.length}</div>
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                {participants.map((p) => (
+                  <span key={p.id} style={{ background: p.avatar_color || '#ddd', color: 'white', padding: '0.45rem 0.7rem', borderRadius: '999px', fontSize: '0.84rem', fontWeight: 700 }}>
+                    {p.nickname}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ ...cardStyle, padding: '1.2rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.5rem', color: '#ec4899', fontWeight: 700 }}>
+                <Trophy size={18} /> Ranking rápido
+              </div>
+              {ranking.length === 0 ? (
+                <p style={{ color: '#6b7280', margin: 0 }}>Todavía no hay fotos subidas.</p>
+              ) : (
+                ranking.map((r, i) => (
+                  <div key={`${r.nick}-${i}`} style={{ display: 'flex', alignItems: 'center', gap: '0.7rem', padding: '0.45rem 0' }}>
+                    <div style={{ width: '24px', textAlign: 'center', fontWeight: 800, color: '#9ca3af' }}>{i + 1}</div>
+                    <div style={{ width: '26px', height: '26px', borderRadius: '999px', background: r.color }} />
+                    <div style={{ flex: 1, color: '#374151', fontWeight: 600 }}>{r.nick}</div>
+                    <div style={{ fontWeight: 800, color: '#7c3aed' }}>{r.count}</div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          <div style={{ ...cardStyle, padding: '1.2rem', marginBottom: '1rem' }}>
+            <div style={{ color: '#7c3aed', fontWeight: 800, marginBottom: '0.35rem' }}>Tu misión esta noche</div>
+            <div style={{ color: '#4b5563' }}>
+              Sube una foto por reto. Luego podéis revelar el autor de cada una para debatir quién fue el paparazzi de la mesa.
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gap: '1rem' }}>
+            {challenges.map((ch) => {
+              const subs = submissions[ch.id] || [];
+              const userSubmitted = subs.some((s) => s.participant_id === currentUser.id);
+
+              return (
+                <div key={ch.id} style={{ ...cardStyle, overflow: 'hidden' }}>
+                  <div style={{ padding: '1.2rem', background: userSubmitted ? 'linear-gradient(180deg, rgba(236,72,153,0.06), rgba(124,58,237,0.03))' : 'transparent' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', flexWrap: 'wrap' }}>
+                      <div>
+                        <h3 style={{ margin: 0, color: '#1f2937', fontSize: '1.15rem' }}>{ch.title}</h3>
+                        <p style={{ margin: '0.35rem 0 0', color: '#6b7280' }}>{ch.description}</p>
+                      </div>
+                      <div style={{ background: '#faf5ff', color: '#7c3aed', border: '1px solid #eadcff', padding: '0.55rem 0.8rem', borderRadius: '999px', fontWeight: 800, fontSize: '0.88rem' }}>
+                        {subs.length} foto{subs.length === 1 ? '' : 's'}
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => submitChallenge(ch.id)}
+                      disabled={loading || userSubmitted}
+                      style={{
+                        ...buttonPrimary,
+                        marginTop: '1rem',
+                        width: '100%',
+                        padding: '0.95rem 1rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '0.55rem',
+                        opacity: loading ? 0.65 : 1,
+                        background: userSubmitted ? 'linear-gradient(135deg, #10b981 0%, #14b8a6 100%)' : buttonPrimary.background,
+                      }}
+                    >
+                      <Camera size={18} />
+                      {userSubmitted ? 'Foto subida' : 'Subir foto'}
+                    </button>
+                  </div>
+
+                  {subs.length > 0 && (
+                    <div style={{ padding: '0 1.2rem 1.2rem' }}>
+                      <div style={{ display: 'grid', gap: '0.9rem', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))' }}>
+                        {subs.map((sub) => {
+                          const author = participantsById[sub.participant_id];
+                          const revealed = !!revealedAuthors[sub.id];
+
+                          return (
+                            <div key={sub.id} style={{ background: '#fff', border: '1px solid #f0e7fb', borderRadius: '18px', overflow: 'hidden', boxShadow: '0 8px 22px rgba(17,24,39,0.05)' }}>
+                              <div onClick={() => setSelectedImage(sub.image_url)} style={{ cursor: 'pointer', background: '#f3f4f6' }}>
+                                <img
+                                  src={sub.image_url}
+                                  alt="submission"
+                                  style={{ width: '100%', aspectRatio: '1 / 1', objectFit: 'cover', display: 'block' }}
+                                />
+                              </div>
+                              <div style={{ padding: '0.85rem' }}>
+                                <div style={{ fontSize: '0.84rem', color: '#6b7280', marginBottom: '0.7rem' }}>
+                                  {revealed ? `Foto de ${author?.nickname || 'desconocido'}` : 'Autor oculto'}
+                                </div>
+                                <button
+                                  onClick={() => toggleReveal(sub.id)}
+                                  style={{
+                                    ...buttonSoft,
+                                    width: '100%',
+                                    padding: '0.75rem 0.85rem',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '0.45rem',
+                                  }}
+                                >
+                                  {revealed ? <EyeOff size={16} /> : <Eye size={16} />}
+                                  {revealed ? 'Ocultar autor' : 'Revelar autor'}
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
 
         {selectedImage && (
@@ -568,7 +702,7 @@ const PhotoChallenge = () => {
             style={{
               position: 'fixed',
               inset: 0,
-              background: 'rgba(0,0,0,0.92)',
+              background: 'rgba(17,24,39,0.88)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -582,9 +716,9 @@ const PhotoChallenge = () => {
               style={{
                 maxWidth: '100%',
                 maxHeight: '100%',
-                borderRadius: '12px',
+                borderRadius: '20px',
                 objectFit: 'contain',
-                boxShadow: '0 10px 30px rgba(0,0,0,0.35)',
+                boxShadow: '0 20px 60px rgba(0,0,0,0.35)',
               }}
             />
           </div>
@@ -594,6 +728,4 @@ const PhotoChallenge = () => {
   }
 
   return null;
-};
-
-export default PhotoChallenge;
+}
