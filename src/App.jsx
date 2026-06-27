@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { Camera, Users, Trophy } from 'lucide-react';
@@ -31,88 +30,6 @@ const PhotoChallenge = () => {
     { title: '🏛️ Monumento Nuestro', desc: 'Vosotros en algo icónico' },
   ];
 
-  const createRoom = async () => {
-    if (!inputNick) return;
-    setLoading(true);
-    setError('');
-
-    try {
-      const code = Math.random().toString(36).substring(2, 8).toUpperCase();
-
-      const { data: roomData, error: roomError } = await supabase
-        .from('rooms')
-        .insert([{ code, name: inputNick, created_by: inputNick }])
-        .select();
-
-      if (roomError) throw roomError;
-
-      const roomId = roomData[0].id;
-      const userColor = colors[0];
-
-      const { data: userData, error: userError } = await supabase
-        .from('participants')
-        .insert([{ room_id: roomId, nickname: inputNick, avatar_color: userColor }])
-        .select();
-
-      if (userError) throw userError;
-
-      for (let i = 0; i < challengesList.length; i++) {
-        const { error: challengeError } = await supabase
-          .from('challenges')
-          .insert([{
-            room_id: roomId,
-            title: challengesList[i].title,
-            description: challengesList[i].desc,
-          }]);
-
-        if (challengeError) throw challengeError;
-      }
-
-      setCurrentRoom({ id: roomId, code });
-      setCurrentUser({ id: userData[0].id, nick: inputNick, color: userColor });
-      setGameState('play');
-      await loadRoomData(roomId);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const joinRoom = async () => {
-    if (!inputCode || !inputNick) return;
-    setLoading(true);
-    setError('');
-
-    try {
-      const { data: roomData, error: roomError } = await supabase
-        .from('rooms')
-        .select()
-        .eq('code', inputCode)
-        .single();
-
-      if (roomError) throw new Error('Sala no encontrada');
-
-      const userColor = colors[Math.floor(Math.random() * colors.length)];
-
-      const { data: userData, error: userError } = await supabase
-        .from('participants')
-        .insert([{ room_id: roomData.id, nickname: inputNick, avatar_color: userColor }])
-        .select();
-
-      if (userError) throw userError;
-
-      setCurrentRoom(roomData);
-      setCurrentUser({ id: userData[0].id, nick: inputNick, color: userColor });
-      setGameState('play');
-      await loadRoomData(roomData.id);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const loadRoomData = async (roomId) => {
     try {
       const { data: challengeData, error: challengeError } = await supabase
@@ -121,7 +38,6 @@ const PhotoChallenge = () => {
         .eq('room_id', roomId);
 
       if (challengeError) throw challengeError;
-
       setChallenges(challengeData || []);
 
       const { data: participantData, error: participantError } = await supabase
@@ -130,7 +46,6 @@ const PhotoChallenge = () => {
         .eq('room_id', roomId);
 
       if (participantError) throw participantError;
-
       setParticipants(participantData || []);
 
       const challengeIds = (challengeData || []).map(c => c.id);
@@ -163,38 +78,135 @@ const PhotoChallenge = () => {
   };
 
   useEffect(() => {
+    if (gameState !== 'play' || !currentRoom?.id) return;
+
+    const interval = setInterval(() => {
+      loadRoomData(currentRoom.id);
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [gameState, currentRoom?.id]);
+
+  const createRoom = async () => {
+    if (!inputNick.trim()) return;
+    setLoading(true);
+    setError('');
+
+    try {
+      const cleanNick = inputNick.trim();
+      const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+
+      const { data: roomData, error: roomError } = await supabase
+        .from('rooms')
+        .insert([{ code, name: cleanNick, created_by: cleanNick }])
+        .select();
+
+      if (roomError) throw roomError;
+
+      const roomId = roomData[0].id;
+      const userColor = colors[0];
+
+      const { data: userData, error: userError } = await supabase
+        .from('participants')
+        .insert([{ room_id: roomId, nickname: cleanNick, avatar_color: userColor }])
+        .select()
+        .single();
+
+      if (userError) throw userError;
+
+      for (let i = 0; i < challengesList.length; i++) {
+        const { error: challengeError } = await supabase
+          .from('challenges')
+          .insert([{
+            room_id: roomId,
+            title: challengesList[i].title,
+            description: challengesList[i].desc,
+          }]);
+
+        if (challengeError) throw challengeError;
+      }
+
+      setCurrentRoom({ id: roomId, code });
+      setCurrentUser({ id: userData.id, nick: cleanNick, color: userColor });
+      setGameState('play');
+      await loadRoomData(roomId);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const joinRoom = async () => {
+    if (!inputCode.trim() || !inputNick.trim()) return;
+    setLoading(true);
+    setError('');
+
+    try {
+      const cleanCode = inputCode.trim().toUpperCase();
+      const cleanNick = inputNick.trim();
+
+      const { data: roomData, error: roomError } = await supabase
+        .from('rooms')
+        .select()
+        .eq('code', cleanCode)
+        .single();
+
+      if (roomError || !roomData) throw new Error('Sala no encontrada');
+
+      const { data: existingParticipants, error: existingError } = await supabase
+        .from('participants')
+        .select()
+        .eq('room_id', roomData.id)
+        .ilike('nickname', cleanNick);
+
+      if (existingError) throw existingError;
+
+      let finalUser;
+
+      if (existingParticipants && existingParticipants.length > 0) {
+        finalUser = existingParticipants[0];
+      } else {
+        const userColor = colors[Math.floor(Math.random() * colors.length)];
+
+        const { data: newUser, error: userError } = await supabase
+          .from('participants')
+          .insert([{ room_id: roomData.id, nickname: cleanNick, avatar_color: userColor }])
+          .select()
+          .single();
+
+        if (userError) throw userError;
+        finalUser = newUser;
+      }
+
+      setCurrentRoom(roomData);
+      setCurrentUser({
+        id: finalUser.id,
+        nick: finalUser.nickname,
+        color: finalUser.avatar_color,
+      });
+      setGameState('play');
+      await loadRoomData(roomData.id);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const refreshRoom = async () => {
     if (!currentRoom?.id) return;
+    setLoading(true);
+    setError('');
 
-    const channel = supabase
-      .channel(`room-${currentRoom.id}-changes`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'submissions',
-        },
-        async () => {
-          await loadRoomData(currentRoom.id);
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'participants',
-        },
-        async () => {
-          await loadRoomData(currentRoom.id);
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [currentRoom?.id]);
+    try {
+      await loadRoomData(currentRoom.id);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const submitChallenge = async (challengeId) => {
     if (!currentUser || !currentRoom) return;
@@ -268,7 +280,9 @@ const PhotoChallenge = () => {
     const stats = {};
 
     participants.forEach(p => {
-      stats[p.id] = { nick: p.nickname, color: p.avatar_color, count: 0 };
+      if (!stats[p.id]) {
+        stats[p.id] = { nick: p.nickname, color: p.avatar_color, count: 0 };
+      }
     });
 
     Object.values(submissions).forEach(subs => {
@@ -337,21 +351,26 @@ const PhotoChallenge = () => {
             <h1 style={{ margin: '0 0 0.3rem 0', fontSize: '1.3rem', fontWeight: '700' }}>Quedada</h1>
             <div style={{ fontSize: '0.75rem', color: '#999', letterSpacing: '1.5px', fontWeight: '700' }}>{currentRoom.code}</div>
           </div>
-          <button
-            onClick={() => {
-              setGameState('home');
-              setCurrentRoom(null);
-              setCurrentUser(null);
-              setParticipants([]);
-              setChallenges([]);
-              setSubmissions({});
-              setSelectedImage(null);
-              setError('');
-            }}
-            style={{ padding: '0.6rem 1.2rem', background: '#f5f5f5', border: 'none', borderRadius: '6px', cursor: 'pointer', color: '#333', fontSize: '0.9rem', fontWeight: '500' }}
-          >
-            Salir
-          </button>
+          <div style={{ display: 'flex', gap: '0.6rem' }}>
+            <button onClick={refreshRoom} disabled={loading} style={{ padding: '0.6rem 1rem', background: '#667eea', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.9rem', fontWeight: '600', opacity: loading ? 0.6 : 1 }}>
+              ↻ Recargar
+            </button>
+            <button
+              onClick={() => {
+                setGameState('home');
+                setCurrentRoom(null);
+                setCurrentUser(null);
+                setParticipants([]);
+                setChallenges([]);
+                setSubmissions({});
+                setSelectedImage(null);
+                setError('');
+              }}
+              style={{ padding: '0.6rem 1.2rem', background: '#f5f5f5', border: 'none', borderRadius: '6px', cursor: 'pointer', color: '#333', fontSize: '0.9rem', fontWeight: '500' }}
+            >
+              Salir
+            </button>
+          </div>
         </div>
 
         {error && (
@@ -370,7 +389,9 @@ const PhotoChallenge = () => {
           <h3 style={{ margin: '0 0 1rem 0', fontSize: '1rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '0.6rem' }}><Users size={18} /> {participants.length} participantes</h3>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(75px, 1fr))', gap: '0.8rem' }}>
             {participants.map(p => (
-              <div key={p.id} style={{ padding: '0.8rem', background: p.avatar_color, color: 'white', borderRadius: '6px', textAlign: 'center', fontSize: '0.8rem', fontWeight: '600' }}>{p.nickname}</div>
+              <div key={p.id} style={{ padding: '0.8rem', background: p.avatar_color, color: 'white', borderRadius: '6px', textAlign: 'center', fontSize: '0.8rem', fontWeight: '600' }}>
+                {p.nickname}
+              </div>
             ))}
           </div>
         </div>
@@ -378,7 +399,7 @@ const PhotoChallenge = () => {
         <div style={{ background: 'white', margin: '0 1rem 1rem', padding: '1.2rem', borderRadius: '8px' }}>
           <h3 style={{ margin: '0 0 1rem 0', fontSize: '1rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '0.6rem' }}><Trophy size={18} /> Top ranking</h3>
           {ranking.map((r, i) => (
-            <div key={r.nick} style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', padding: '0.8rem 0', borderBottom: i < ranking.length - 1 ? '1px solid #f0f0f0' : 'none' }}>
+            <div key={`${r.nick}-${i}`} style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', padding: '0.8rem 0', borderBottom: i < ranking.length - 1 ? '1px solid #f0f0f0' : 'none' }}>
               <div style={{ fontSize: '1.3rem', fontWeight: '800', color: '#999', minWidth: '28px' }}>{i + 1}</div>
               <div style={{ width: '32px', height: '32px', background: r.color, borderRadius: '50%' }} />
               <div style={{ flex: 1, fontSize: '0.95rem', color: '#333', fontWeight: '500' }}>{r.nick}</div>
@@ -401,7 +422,9 @@ const PhotoChallenge = () => {
                       <h4 style={{ margin: '0 0 0.3rem 0', fontSize: '1.05rem', fontWeight: '700', color: '#333' }}>{ch.title}</h4>
                       <p style={{ margin: 0, fontSize: '0.85rem', color: '#999' }}>{ch.description}</p>
                     </div>
-                    <div style={{ background: '#f0f0f0', padding: '0.4rem 0.9rem', borderRadius: '4px', fontSize: '0.85rem', fontWeight: '700', color: '#666', whiteSpace: 'nowrap', marginLeft: '0.8rem' }}>{subs.length}</div>
+                    <div style={{ background: '#f0f0f0', padding: '0.4rem 0.9rem', borderRadius: '4px', fontSize: '0.85rem', fontWeight: '700', color: '#666', whiteSpace: 'nowrap', marginLeft: '0.8rem' }}>
+                      {subs.length}
+                    </div>
                   </div>
 
                   <button onClick={() => submitChallenge(ch.id)} disabled={loading || userSubmitted} style={{ width: '100%', padding: '0.9rem', background: userSubmitted ? '#4ECDC4' : '#667eea', color: 'white', border: 'none', borderRadius: '6px', fontWeight: '600', cursor: userSubmitted ? 'default' : 'pointer', fontSize: '1rem', marginTop: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.6rem', opacity: loading ? 0.6 : 1 }}>
